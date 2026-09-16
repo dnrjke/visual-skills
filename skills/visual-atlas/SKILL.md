@@ -267,6 +267,12 @@ globs. A source scope can span folders and domains. Scopes may overlap between p
 groups; every dependent page includes the shared file in its own fingerprint. All matching files
 contribute at file granularity. An empty group is an integrity failure.
 
+Module recognition defaults to TS/JS. A repo in other languages sets `moduleExtensions`, e.g.
+`[".rs", ".py", ".c", ".h", ".bat", ".toml"]`; those files become modules by path (their imports are
+not resolved, so domain-map edges stay authored). A `srcRoots` entry may name a directory (walked,
+skipping build dirs such as `node_modules` and `target`) or a single file, which keeps a narrow
+atlas from sweeping vendored code into "unassigned module" failures.
+
 ## Workflow (three modes)
 
 `bin/atlas.ts` has three operation modes. The artifact set lives in one absolute `--out` directory,

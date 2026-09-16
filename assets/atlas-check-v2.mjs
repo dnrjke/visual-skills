@@ -2,8 +2,8 @@
 /** Recursive visual-atlas integrity, readability, and per-page freshness checker. */
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const atlasDir = dirname(fileURLToPath(import.meta.url));
@@ -23,9 +23,24 @@ const config = JSON.parse(readFileSync(configPath, "utf8"));
 const problems = [];
 const warnings = [];
 
-const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", ".turbo"]);
+const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", ".turbo", "target", "__pycache__"]);
 const NON_DOMAIN_DIRS = new Set(["generated", "__generated__", "test", "tests", "__tests__", "__mocks__"]);
-const SOURCE_RE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
+const DEFAULT_MODULE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
+// config.moduleExtensions widens module recognition (e.g. [".rs", ".py"]); omitted = TS/JS only.
+// Mirrors moduleExtensionRe in src/dep-graph.ts.
+function moduleExtensionRe(extensions) {
+  const list = Array.isArray(extensions) && extensions.length ? extensions : DEFAULT_MODULE_EXTENSIONS;
+  const parts = list.map((ext) => {
+    const bare = String(ext).replace(/^\./, "");
+    if (!/^[A-Za-z0-9_+-]+$/.test(bare)) {
+      console.error(`atlas-check: invalid module extension "${ext}" in atlas.domains.json`);
+      process.exit(1);
+    }
+    return bare.replace(/[+]/g, "\\+");
+  });
+  return new RegExp(`\\.(?:${parts.join("|")})$`);
+}
+const SOURCE_RE = moduleExtensionRe(config.moduleExtensions);
 const TEST_FILE_RE = /\.(test|spec)\.[cm]?[jt]sx?$/;
 const SAFE_PAGE_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -57,15 +72,23 @@ function matchGlob(glob, path) {
 }
 
 const allRepoFiles = walk(repoRoot).map(rel);
-const live = [];
+// A srcRoot may name a directory (walked) or a single module file.
+function rootModules(root) {
+  const absolute = join(repoRoot, root);
+  let info;
+  try { info = statSync(absolute); } catch { return []; }
+  if (info.isFile()) return SOURCE_RE.test(basename(absolute)) ? [absolute] : [];
+  return walk(absolute, [], true);
+}
+const liveSet = new Set();
 for (const root of config.srcRoots ?? []) {
-  for (const absolute of walk(join(repoRoot, root), [], true)) {
+  for (const absolute of rootModules(root)) {
     const path = rel(absolute);
     if (path.split("/").some((segment) => NON_DOMAIN_DIRS.has(segment))) continue;
-    if (!TEST_FILE_RE.test(path)) live.push(path);
+    if (!TEST_FILE_RE.test(path)) liveSet.add(path);
   }
 }
-const liveSet = new Set(live);
+const live = [...liveSet];
 
 // Conceptual page tree. This mirrors src/atlas-tree.ts without depending on the package.
 const nodes = [];

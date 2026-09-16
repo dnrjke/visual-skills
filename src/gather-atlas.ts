@@ -1,9 +1,9 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { importsOf, exportsOf } from "./imports.js";
 import { parseRouter } from "./trpc-parse.js";
 import { parsePrismaModels } from "./prisma-schema.js";
-import { walkSource, moduleKey, loadAliases, resolveModule } from "./dep-graph.js";
+import { walkSource, moduleKey, loadAliases, resolveModule, moduleExtensionRe, isScriptModule } from "./dep-graph.js";
 import type { AtlasConfig } from "./atlas-config.js";
 import type { AtlasPageNode, ResolvedSourceGroup } from "./atlas-tree.js";
 import type { AtlasDiagram } from "./atlas-blocks.js";
@@ -62,16 +62,33 @@ export function suggestTopicExtractions(config: AtlasConfig, inv: Inventory): To
   return suggestions;
 }
 
-/** Walk srcRoots, parse imports/exports/routers per module, and collect Prisma models. */
-export async function scanInventory(repoRoot: string, srcRoots: string[]): Promise<Inventory> {
+export interface ScanOptions {
+  /** Module file extensions (e.g. `[".rs", ".py"]`). Default: TS/JS only. */
+  moduleExtensions?: string[];
+}
+
+/** List one srcRoot's module paths, repo-relative. A root may name a directory (walked) or a
+ *  single file (kept when its extension is a module extension). Missing roots yield nothing. */
+async function rootModules(repoRoot: string, root: string, match: RegExp): Promise<string[]> {
+  const clean = root.replace(/\\/g, "/").replace(/\/$/, "");
+  const info = await stat(join(repoRoot, clean)).catch(() => null);
+  if (!info) return [];
+  if (info.isFile()) return match.test(basename(clean)) ? [clean] : [];
+  // walkSource returns paths relative to its argument; re-root to the repo.
+  return (await walkSource(join(repoRoot, clean), undefined, [], match))
+    .map((rel) => `${clean}/${rel}`.replace(/\\/g, "/"));
+}
+
+/** Walk srcRoots, parse imports/exports/routers per module, and collect Prisma models.
+ *  Non-TS/JS modules (when configured) are inventoried by path only: no import edges, no exports. */
+export async function scanInventory(repoRoot: string, srcRoots: string[], opts: ScanOptions = {}): Promise<Inventory> {
   const aliases = loadAliases(repoRoot);
+  const match = moduleExtensionRe(opts.moduleExtensions);
   const seen = new Set<string>();
   const modules: ModuleInfo[] = [];
 
   for (const root of srcRoots) {
-    for (const rel of await walkSource(join(repoRoot, root))) {
-      // walkSource returns paths relative to its argument; re-root to the repo.
-      const path = `${root.replace(/\/$/, "")}/${rel}`.replace(/\\/g, "/");
+    for (const path of await rootModules(repoRoot, root, match)) {
       if (seen.has(path)) continue;
       seen.add(path);
       if (path.split("/").some((seg) => NON_DOMAIN_DIRS.has(seg))) continue; // codegen / test trees aren't domains
@@ -79,6 +96,10 @@ export async function scanInventory(repoRoot: string, srcRoots: string[]): Promi
 
       const src = await readFile(join(repoRoot, path), "utf8").catch(() => null);
       if (src == null) continue;
+      if (!isScriptModule(path)) {
+        modules.push({ path, imports: [], exports: [], isRouter: false });
+        continue;
+      }
       // valueOnly: a `import type { AppRouter }` (tRPC) or `import type { Foo }` (Prisma) is not a
       // runtime/architectural dependency, so it must not become a domain edge.
       const imports = [...new Set(

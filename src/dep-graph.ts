@@ -7,7 +7,30 @@ import { importsOf } from "./imports.js";
 import { MERMAID_CLASSDEFS } from "./diagram-colors.js";
 
 const SOURCE_RE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
-const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", ".turbo"]);
+/** Build/vendor dirs never walked. `target` (Cargo/Maven) and `__pycache__` cover non-JS repos. */
+const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", ".turbo", "target", "__pycache__"]);
+
+/** The module extensions an atlas scans when its config names none: TS/JS only. */
+export const DEFAULT_MODULE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
+
+/**
+ * Anchored matcher for a module-extension list such as `[".rs", ".py"]`. Undefined or empty
+ * falls back to the TS/JS default so existing configs behave exactly as before.
+ */
+export function moduleExtensionRe(extensions?: string[]): RegExp {
+  const list = extensions?.length ? extensions : DEFAULT_MODULE_EXTENSIONS;
+  const parts = list.map((ext) => {
+    const bare = ext.replace(/^\./, "");
+    if (!/^[A-Za-z0-9_+-]+$/.test(bare)) throw new Error(`invalid module extension "${ext}"`);
+    return bare.replace(/[+]/g, "\\+");
+  });
+  return new RegExp(`\\.(?:${parts.join("|")})$`);
+}
+
+/** True for a TS/JS path — the only languages whose imports/exports are parsed. */
+export function isScriptModule(path: string): boolean {
+  return SOURCE_RE.test(path);
+}
 
 function q(s: string): string {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -75,15 +98,18 @@ export function resolveModule(fromRepoRel: string, spec: string, aliases: Aliase
   return spec.startsWith(".") ? resolveRel(fromRepoRel, spec) : resolveAlias(spec, aliases);
 }
 
-/** Recursively list repo-relative source files, skipping vendor/build dirs. */
-export async function walkSource(root: string, dir = root, acc: string[] = []): Promise<string[]> {
+/** Recursively list repo-relative source files, skipping vendor/build dirs.
+ *  `match` selects module files by name (TS/JS by default). */
+export async function walkSource(
+  root: string, dir = root, acc: string[] = [], match: RegExp = SOURCE_RE,
+): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
   for (const e of entries) {
     const abs = join(dir, e.name);
     if (e.isDirectory()) {
       if (SKIP_DIRS.has(e.name)) continue;
-      await walkSource(root, abs, acc);
-    } else if (SOURCE_RE.test(e.name)) {
+      await walkSource(root, abs, acc, match);
+    } else if (match.test(e.name)) {
       acc.push(relative(root, abs).replace(/\\/g, "/"));
     }
   }

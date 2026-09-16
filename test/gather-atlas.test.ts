@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { join } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { scanInventory } from "../src/gather-atlas.js";
 import { aggregateDomainEdges, domainMapDiagram } from "../src/gather-atlas.js";
 import type { AtlasConfig } from "../src/atlas-config.js";
@@ -40,6 +42,43 @@ describe("scanInventory", () => {
     const inv = await scanInventory(REPO, ["lib"]);
     expect(inv.modules.find((m) => m.path === "lib/api/root.ts")!.isRouter).toBe(true);
     expect(inv.models.sort()).toEqual(["Game", "Team"]);
+  });
+
+  it("inventories configured non-TS modules by path, accepts file roots, and skips build dirs", async () => {
+    const root = mkdtempSync(join(tmpdir(), "atlas-polyglot-"));
+    try {
+      mkdirSync(join(root, "native", "src"), { recursive: true });
+      mkdirSync(join(root, "native", "target", "debug"), { recursive: true });
+      mkdirSync(join(root, "tools", "__pycache__"), { recursive: true });
+      writeFileSync(join(root, "native", "src", "lib.rs"), "pub fn serve() {}\nuse crate::x;\n");
+      writeFileSync(join(root, "native", "src", "shim.c"), "int shim(void) { return 0; }\n");
+      writeFileSync(join(root, "native", "target", "debug", "out.rs"), "// generated\n");
+      writeFileSync(join(root, "native", "README.md"), "# docs\n");
+      writeFileSync(join(root, "tools", "prep.py"), "import os\n");
+      writeFileSync(join(root, "tools", "__pycache__", "prep.cpython.py"), "\n");
+      writeFileSync(join(root, "tools", "helper.ts"), "import { a } from './prep';\nexport const b = 1;\n");
+      writeFileSync(join(root, "run.bat"), "@echo off\n");
+      writeFileSync(join(root, "notes.txt"), "not a module\n");
+
+      const inv = await scanInventory(root, ["native", "tools", "run.bat", "notes.txt", "missing"], {
+        moduleExtensions: [".rs", ".c", ".py", ".ts", "bat"],
+      });
+      expect(inv.modules.map((m) => m.path)).toEqual([
+        "native/src/lib.rs", "native/src/shim.c", "run.bat", "tools/helper.ts", "tools/prep.py",
+      ]);
+      const rust = inv.modules.find((m) => m.path === "native/src/lib.rs")!;
+      expect(rust).toEqual({ path: "native/src/lib.rs", imports: [], exports: [], isRouter: false });
+      expect(inv.modules.find((m) => m.path === "tools/helper.ts")!.exports).toEqual(["b"]);
+
+      const tsOnly = await scanInventory(root, ["native", "tools", "run.bat"]);
+      expect(tsOnly.modules.map((m) => m.path)).toEqual(["tools/helper.ts"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a malformed module extension", async () => {
+    await expect(scanInventory(REPO, ["lib"], { moduleExtensions: [".r s"] })).rejects.toThrow(/invalid module extension/);
   });
 });
 

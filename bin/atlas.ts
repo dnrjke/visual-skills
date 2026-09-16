@@ -208,7 +208,7 @@ async function main() {
       const config = parseConfig(cfgPath, await readFile(cfgPath, "utf8"));
       const domain = config.domains.find((d) => d.slug === values.domain);
       if (!domain) { console.error(`unknown domain "${values.domain}" — not in atlas.domains.json`); process.exit(2); }
-      const inv = await scanInventory(repo, config.srcRoots);
+      const inv = await scanInventory(repo, config.srcRoots, { moduleExtensions: config.moduleExtensions });
       const { config: live, drift } = reconcile(config, inv.modules.map((m) => m.path));
       const liveDomain = live.domains.find((d) => d.slug === values.domain)!;
       const edges = aggregateDomainEdges(live, inv);
@@ -235,7 +235,7 @@ async function main() {
       return; // end main()
     }
     const config0 = await loadOrGuessConfig(repo, outDir);
-    const inv = await scanInventory(repo, config0.srcRoots);
+    const inv = await scanInventory(repo, config0.srcRoots, { moduleExtensions: config0.moduleExtensions });
     const { config, drift } = reconcile(config0, inv.modules.map((m) => m.path));
     await writeFile(join(outDir, "atlas.domains.json"), JSON.stringify(config, null, 2));
     const tree = checkedTree(config);

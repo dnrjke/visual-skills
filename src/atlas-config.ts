@@ -38,7 +38,11 @@ export interface DomainConfig {
 }
 export interface AtlasConfig {
   repo: string;
+  /** Directories (walked) or single files scanned for modules, repo-relative. */
   srcRoots: string[];
+  /** Module file extensions, e.g. [".rs", ".py", ".bat"]. Omitted = TS/JS only.
+   *  Non-TS/JS modules are inventoried by path; their imports are not resolved. */
+  moduleExtensions?: string[];
   domains: DomainConfig[];
   topics?: TopicConfig[];
   readingPaths?: ReadingPathConfig[];

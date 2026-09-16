@@ -11,8 +11,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const CHECKER = new URL("../assets/atlas-check-v2.mjs", import.meta.url).pathname;
+// fileURLToPath, not URL.pathname: the latter yields "/C:/..." on Windows.
+const CHECKER = fileURLToPath(new URL("../assets/atlas-check-v2.mjs", import.meta.url));
 
 function writeJson(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
@@ -425,6 +427,59 @@ describe("recursive atlas checker", () => {
       expect(result.output).toMatch(/fewer than roughly 180 visible narrative words/i);
       expect(result.output).toMatch(/multi-stage topic has no diagram or worked example/i);
       expect(result.output).toMatch(/algorithm topic has no worked example/i);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("recognizes configured non-TS modules, single-file srcRoots, and build dirs", () => {
+    const { root, atlas } = seedAtlas();
+    try {
+      mkdirSync(join(root, "native", "src"), { recursive: true });
+      mkdirSync(join(root, "native", "target", "debug"), { recursive: true });
+      writeFileSync(join(root, "native", "src", "lib.rs"), "pub fn serve_feed() {}\n");
+      writeFileSync(join(root, "native", "target", "debug", "gen.rs"), "// build output\n");
+      writeFileSync(join(root, "native", "notes.md"), "# not a module\n");
+      writeFileSync(join(root, "run.bat"), "@echo off\n");
+      const configPath = join(atlas, "atlas.domains.json");
+      const config = JSON.parse(readFileSync(configPath, "utf8"));
+      config.srcRoots = ["src", "native", "run.bat"];
+      config.moduleExtensions = [".ts", ".rs", ".bat"];
+      config.domains[0].globs = ["src/conversation.ts", "native/**", "run.bat"];
+      config.domains[0].modules = ["native/src/lib.rs", "run.bat", "src/conversation.ts"];
+      writeJson(configPath, config);
+      const domainPath = join(atlas, "domain-conversation", "domain-conversation.json");
+      const domain = JSON.parse(readFileSync(domainPath, "utf8"));
+      domain.blocks.find((block: any) => block.type === "seams").exposes = [
+        { api: "serve_feed()" },
+        { api: "run.bat" },
+      ];
+      writeJson(domainPath, domain);
+
+      const stamped = run(root, ["--stamp"]);
+      expect(stamped.output).not.toMatch(/unassigned module/i);
+      expect(stamped.ok).toBe(true);
+      const result = run(root);
+      expect(result.ok).toBe(true);
+      expect(result.output).toMatch(/in sync \(3 modules/);
+
+      writeFileSync(join(root, "native", "src", "extra.rs"), "pub fn extra() {}\n");
+      const drift = run(root);
+      expect(drift.ok).toBe(false);
+      expect(drift.output).toMatch(/module inventory.*native\/src\/extra\.rs/i);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps TS/JS-only recognition when moduleExtensions is omitted", () => {
+    const { root } = seedAtlas();
+    try {
+      writeFileSync(join(root, "src", "helper.py"), "def helper():\n    pass\n");
+      expect(run(root, ["--stamp"]).ok).toBe(true);
+      const result = run(root);
+      expect(result.ok).toBe(true);
+      expect(result.output).not.toMatch(/helper\.py/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
