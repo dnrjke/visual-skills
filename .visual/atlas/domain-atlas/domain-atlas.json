@@ -306,7 +306,7 @@
             },
             {
               "name": "AtlasConfig",
-              "desc": "The config shape (`repo` / `srcRoots` / domains plus optional root topics and reading paths)."
+              "desc": "The config shape (`repo` / `srcRoots` / optional `moduleExtensions` / domains plus optional root topics and reading paths)."
             },
             {
               "name": "buildPageTree()",
@@ -337,7 +337,7 @@
           "name": "scan + draft",
           "path": "src/gather-atlas.ts",
           "detail": [
-            "The hub of the [full-scan flow](#arch). `scanInventory` walks the srcRoots, and per module records resolved in-repo import keys, exported names, and whether it is a tRPC router — skipping generated/test trees and co-located `*.test`/`*.spec` files. It also collects Prisma model names. `aggregateDomainEdges` rolls module→module imports up to cross-domain slug→slug edges (intra-domain edges dropped).",
+            "The hub of the [full-scan flow](#arch). `scanInventory` lists modules from the srcRoots — each root is a directory to walk or a single file — keeping files whose extension is in the config's `moduleExtensions` (TS/JS when omitted) and skipping generated/test trees and co-located `*.test`/`*.spec` files. For each TS/JS module it records resolved in-repo import keys, exported names, and whether it is a tRPC router; other configured extensions are inventoried by path only, with no imports or exports. It also collects Prisma model names. `aggregateDomainEdges` rolls module→module imports up to cross-domain slug→slug edges (intra-domain edges dropped).",
             "`buildAtlasDraft` emits the system map and uses configured domain purposes. `buildDomainDraft` keeps the legacy deep inventory for domains without child topics, but produces a smaller orientation landing with a collapsed implementation reference when children exist. `buildTopicDraft` creates a plain lead, structured flow and rule sections, and labeled file groups from resolved evidence. The scanner supplies structure and inventory, not the technical explanation."
           ],
           "files": [
@@ -616,8 +616,8 @@
     }
   ],
   "verifiedAgainst": {
-    "hash": "sha256:59b6a4218244bcece65d6201aebb456998dc4939b7c6b511b50fe9e232878bde",
-    "date": "2026-08-26",
-    "commit": "ad48389b7f96b4e4b7a9a983cfa82e18bb7dda4f"
+    "hash": "sha256:847bbe044a98bae5d2b11ab96fc1ea84f02ac33aa25427c5f06889ac4159522a",
+    "date": "2026-09-16",
+    "commit": "75751806ee2452c0fba06ce7ec0847444166a15b"
   }
 }

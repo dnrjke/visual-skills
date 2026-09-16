@@ -374,7 +374,7 @@
           "path": "src/dep-graph.ts",
           "detail": [
             "`dependencyNeighborhood(changedPaths, repoRoot)` builds the bounded 1-hop import neighborhood around the changed source files: their outgoing imports and the in-repo files that import them. It calls [importsOf](#c-imports) per file and `resolveModule` to turn each specifier into a `moduleKey` — relative specifiers join + normalize; bare packages resolve to `null` and are dropped as noise. `loadAliases` reads tsconfig `paths`/`baseUrl` so aliased imports (`@/...`) resolve too (a diagram-aid heuristic, not full module resolution).",
-            "Nodes are capped (default 15) by keeping all changed files plus the highest-degree neighbors, with a `+N more` placeholder for the rest. It emits both a D2 floor and an editable mermaid `graph LR` — the recap's mechanical **`where-it-fits`** diagram. `walkSource` (the recursive source lister, skipping `node_modules`/`dist`/…) backs the importer scan."
+            "Nodes are capped (default 15) by keeping all changed files plus the highest-degree neighbors, with a `+N more` placeholder for the rest. It emits both a D2 floor and an editable mermaid `graph LR` — the recap's mechanical **`where-it-fits`** diagram. `walkSource` (the recursive source lister, skipping `node_modules`/`dist`/`target`/…) backs the importer scan; it matches TS/JS files unless given another pattern, which `moduleExtensionRe` builds from an atlas config's `moduleExtensions`."
           ],
           "files": [
             {
@@ -398,6 +398,10 @@
             {
               "name": "walkSource()",
               "desc": "The recursive source lister (skips vendor/build dirs)."
+            },
+            {
+              "name": "moduleExtensionRe()",
+              "desc": "Extension list → anchored file matcher; empty or omitted means TS/JS."
             },
             {
               "name": "moduleKey()",
@@ -535,8 +539,8 @@
     }
   ],
   "verifiedAgainst": {
-    "hash": "sha256:2e2f56fa64d9672c21b4302d17785cc58b143de558fdb2141b2b32df6c707404",
-    "date": "2026-08-26",
-    "commit": "ad48389b7f96b4e4b7a9a983cfa82e18bb7dda4f"
+    "hash": "sha256:080fcb20ba88c7d73f3cb6d245a4b1a6c26219371dfbb4188c0a806112f69bae",
+    "date": "2026-09-16",
+    "commit": "75751806ee2452c0fba06ce7ec0847444166a15b"
   }
 }
